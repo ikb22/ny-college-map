@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+
+<head>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://d3js.org/topojson.v3.min.js"></script>
+  <style>
+    .outline {
+      fill: none;
+    }
+    .state {
+      fill: none;
+    }
+    .flex{
+      display: flex;
+      flex-direction: row;
+    }
+    .filters{
+      display: flex;
+      flex-direction: column;
+      margin-left: 15px;
+    }
+    .map{
+      width: 1010px;
+    }
+    .mouseover-text{
+      fill: white;
+    }
+    datalist {
+      display: flex;
+      justify-content: space-between;
+      width: 300px;
+      padding-left: 5px;
+    }
+    input[type=range]{
+      width: 300px;
+    }
+    .slider-label{
+      margin-top: 30px;
+    }
+    h1{
+      text-align: center;
+    }
+    h3{
+      font-weight: normal;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="flex">
+    <div class="filters">
+      <h1>College and University Statistics in New York State </h1>
+      <h3>
+        Note: Hover over a point to see its information! You can also click and
+        drag on the map to move it around, as well as scroll down or up on the
+        map to zoom in or out! If no information shows from a point,
+        make sure there's space in the top left corner of the map for the information.
+      </h3>
+      <h2> Filter Schools: </h2>
+      <div id="pulldown-bar">
+        <label for="sort-select">Public or Private:</label>
+        <select id="sort-select" style="width:260px;">
+          <option value="sortNormal">Showing all schools</option>
+          <option value="sortPub">Show public schools only</option>
+          <option value="sortPriv">Show private schools only</option>
+        </select>
+      </div>
+      <label class="slider-label" id="sat-label" for="sat"> </label>
+      <input type="range" id="sat" name="sat" value="1600" list="sat-ticks" min="800" max="1600" step="10"></input>
+      <datalist id="sat-ticks">
+        <option value="800" label="800"></option>
+        <option value="1000" label="1000"></option>
+        <option value="1200" label="1200"></option>
+        <option value="1400" label="1400"></option>
+        <option value="1600" label="1600"></option>
+      </datalist>
+
+      <label class="slider-label" id="act-label" for="act"> </label>
+      <input type="range" id="act" name="act" value="36" list="act-ticks" min="18" max="36" step="0.5"></input>
+      <datalist id="act-ticks">
+        <option value="18" label="18"></option>
+        <option value="22.5" label="22.5"></option>
+        <option value="27" label="27"></option>
+        <option value="31.5" label="31.5"></option>
+        <option value="36" label="36"></option>
+      </datalist>
+
+      <label class="slider-label" id="price-in-label" for="price-in"> </label>
+      <input type="range" id="price-in" name="price-in" value='70000' list="price-in-ticks" min="0" max="70000" step="500" ></input>
+      <datalist id="price-in-ticks">
+        <option value="0" label="0"></option>
+        <option value="17500" label="17.5"></option>
+        <option value="35000" label="35"></option>
+        <option value="52500" label="52.5"></option>
+        <option value="70000" label="70"></option>
+      </datalist>
+
+      <label class="slider-label" id="price-out-label" for="price-out"> </label>
+      <input type="range" id="price-out" name="price-out" value='70000' list="price-out-ticks" min="0" max="70000" step="500" ></input>
+      <datalist id="price-out-ticks">
+        <option value="0" label="0"></option>
+        <option value="17500" label="17.5"></option>
+        <option value="35000" label="35"></option>
+        <option value="52500" label="52.5"></option>
+        <option value="70000" label="70"></option>
+      </datalist>
+
+    </div>
+    <div class="map">
+      <svg id="choropleth" height="770" width="990" style="margin:15px; display: block;"></svg>
+    </div>
+  </div>
+  <script>
+    const createGraph = async function () {
+      // map setup
+      const svg = d3.select("svg");
+      const width = svg.attr("width");
+      const height = svg.attr("height");
+      const viewport = svg.append("g");
+      var circles = svg.selectAll("circle.dot");
+
+      const nyincome = await d3.json("ny_income.topo.json");
+      const data = await d3.csv("edited_dataset.csv", d3.autoType);
+      console.log(data);
+
+      var zips = topojson.feature(nyincome, nyincome.objects.zip_codes);
+      var zipsMesh = topojson.mesh(nyincome, nyincome.objects.zip_codes);
+      var stateMesh = topojson.mesh(nyincome, nyincome.objects.state);
+      var projection = d3.geoMercator().fitSize([width, height], zips);
+      var path = d3.geoPath().projection(projection);
+
+      let zipPaths = viewport.selectAll("path.zip").data(zips.features)
+                            .join("path")
+                            .attr("class", "zip")
+                            .attr("d", path)
+                            .attr("fill", "white");
+      let mesh = viewport.append("path").datum(zipsMesh)
+                            .attr("class", "outline")
+                            .attr("d", path)
+                            .attr("stroke", "darkgrey")
+                            .attr("stroke-width", 1);
+      let state = viewport.append("path").datum(stateMesh)
+                            .attr("class", "state")
+                            .attr("d", path)
+                            .attr("stroke", "grey")
+                            .attr("stroke-width", 3);
+
+      // zoom capabilities
+      var plotZoom = d3.zoom().scaleExtent([1, 10]).on("zoom", plotZoomed);
+      svg.call(plotZoom);
+
+      var kholder = 1;
+
+      function plotZoomed(event) {
+        viewport.attr("transform", event.transform.toString());
+        mesh.attr("stroke-width", 1 / event.transform.k)
+        circles.attr("r", 5 / event.transform.k)
+        kholder = event.transform.k
+      };
+
+      // add position projection for each, add sat and act max values
+      data.forEach( (d, i) =>{
+        d['position'] = projection([d['Longitude'], d['Latitude']]);
+        if (d['In-State Cost']===0){
+          d['In-State Cost'] = "no data"
+        }
+        if (d['Out-State Cost']===0){
+          d['Out-State Cost'] = "no data"
+        }
+        if (d["SAT Total 25th-75th%"]===null){
+          d["SAT Total 25th-75th%"] = "no data"
+          d['sat_max'] = null
+        } else{
+          d['sat_max'] = Number(d["SAT Total 25th-75th%"].split("-")[1]);
+        }
+        if (d["ACT Total 25th-75th%"]===null){
+          d["ACT Total 25th-75th%"] = "no data"
+          d['act_max'] = null
+        } else{
+          d['act_max'] = Number(d["ACT Total 25th-75th%"].split("-")[1])
+        }
+      });
+
+      // helper functions for filtering
+      function keepCircle(point, dict) {
+        let keep = true; 
+        let option = d3.select("#sort-select").property("value")
+        if (point['sat_max'] > dict['sat']){
+          keep = false
+        }
+        if (point['act_max'] > dict['act']){
+          keep = false
+        }
+        if (point['In-State Cost'] > dict['price in-state']){
+          keep = false
+        }
+        if (point['Out-State Cost'] > dict['price out-state']){
+          keep = false
+        }
+        if (option === "sortPub") {
+          if (point['Type'] === "Private") {
+            keep = false
+          }
+        }
+        if (option === "sortPriv"){
+          if (point['Type'] === "Public"){
+            keep = false
+          }
+        }
+        return keep;
+      }
+     
+      function drawCircles(dict) {
+        circles = viewport.selectAll("circle.dot").data(data.filter(d => keepCircle(d, dict)))
+                                      .join(enter => enter.append("circle")
+                                      .attr("class", "dot")
+                                      .attr("fill", "green")
+                                      .attr("opacity", 0.8)
+                                      .on("mouseover", mouseEntersCircle)
+                                      .on("mouseout", mouseExitsCircle))
+                                      .attr("r", 5 / kholder)
+                                      .attr("cx", d => d['position'][0] )
+                                      .attr("cy", d => d['position'][1] )
+                                      
+      };
+
+      function updateLabels(){
+        document.getElementById("sat-label").innerHTML = `SAT Range: 800 - ${filter_dict['sat']}`
+        document.getElementById("act-label").innerHTML = `ACT Range: 18 - ${filter_dict['act']}`
+        let price_thous_in = filter_dict['price in-state']/1000
+        document.getElementById("price-in-label").innerHTML = `Price In-State Range (thousands): 0 - ${price_thous_in}k`
+        let price_thous_out = filter_dict['price out-state']/1000
+        document.getElementById("price-out-label").innerHTML = `Price Out-State Range (thousands): 0 - ${price_thous_out}k`
+      }
+
+      // make a dictionary to store the values from the sliders to filter by
+      let filter_dict = {"sat": Number(document.getElementById("sat").value),
+                          "act": Number(document.getElementById("act").value),
+                          "price in-state": Number(document.getElementById("price-in").value),
+                          "price out-state": Number(document.getElementById("price-out").value)}
+
+      // initialize map with points
+      drawCircles(filter_dict);
+      updateLabels();
+
+      // filtering capabilities (drop down menu)
+      d3.select("#sort-select").on("change", function () {
+        drawCircles(filter_dict)
+      });
+      // filtering capabilities (sliders)
+      d3.select("#sat").on("change", function () {
+        filter_dict['sat'] = Number(this.value);
+        drawCircles(filter_dict);
+        updateLabels();
+      });
+      d3.select("#act").on("change", function () {
+        filter_dict['act'] = Number(this.value)
+        drawCircles(filter_dict);
+        updateLabels();
+      });
+      d3.select("#price-in").on("change", function () {
+        filter_dict['price in-state'] = Number(this.value)
+        drawCircles(filter_dict);
+        updateLabels();
+      });
+      d3.select("#price-out").on("change", function () {
+        filter_dict['price out-state'] = Number(this.value)
+        drawCircles(filter_dict);
+        updateLabels();
+      });
+
+      // information interactivity
+      let mouseoverWidth =  400;
+      let mouseoverHeight = 200;
+      let rectStartX = 20;
+      let rectStartY = 20;
+
+      // put into function
+      function mouseEntersCircle(event, d) {
+        if (event['y'] > 500){
+          mouseover.attr("transform", `translate(70,150)`)
+        } else{
+          mouseover.attr("transform", `translate(70,50)`)
+        }
+        let circle = d3.select(this)
+        circle.attr("r", circle.attr("r") * 2)
+              .attr("fill", "red")
+              .attr("opacity", 1.0)
+        mouseover.style("visibility","visible")
+        updateMouseover(circle.datum());
+      }
+
+      function mouseExitsCircle(event, d) {
+        let circle = d3.select(this)
+        circle.attr("r", circle.attr("r") / 2)
+              .attr("fill", "green")
+              .attr("opacity", 0.8)
+        mouseover.style("visibility","hidden");
+      }
+    
+
+      let mouseover = svg.append("g")
+                            .attr("class", "mouseover")
+                            .attr("visibility", "hidden")
+
+      let rect = mouseover.append("rect")
+                  .attr("class", "textbox")
+                  .attr("fill", "darkgrey")
+                  .attr("opacity", 0.7)
+                  .attr("width", mouseoverWidth)
+                  .attr("height", mouseoverHeight)
+                  .attr("stroke", "black")
+                  .attr("stroke-width", 3)
+                  .attr("x", rectStartX)
+                  .attr("y", rectStartY)
+
+      let school = mouseover.append("text")
+                              .attr("class", "mouseover-text")
+                              .attr("alignment-baseline","hanging")
+                              .attr("x", rectStartX + 10)
+                              .attr("y", rectStartY + 20 );
+
+      let enroll = mouseover.append("text")
+                              .attr("class", "mouseover-text")
+                              .attr("alignment-baseline","hanging")
+                              .attr("x", rectStartX +10)
+                              .attr("y", rectStartY + 40);
+
+      let instate = mouseover.append("text")
+                              .attr("class", "mouseover-text")
+                              .attr("alignment-baseline","hanging")
+                              .attr("x", rectStartX + 10)
+                              .attr("y", rectStartY + 60);
+
+      let outstate = mouseover.append("text")
+                              .attr("class", "mouseover-text")
+                              .attr("alignment-baseline","hanging")
+                              .attr("x", rectStartX + 10)
+                              .attr("y", rectStartY + 80);
+
+      let type = mouseover.append("text")
+                              .attr("class", "mouseover-text")
+                              .attr("alignment-baseline","hanging")
+                              .attr("x", rectStartX + 10)
+                              .attr("y", rectStartY + 100);
+      let acceptance = mouseover.append("text")
+                              .attr("class", "mouseover-text")
+                              .attr("alignment-baseline","hanging")
+                              .attr("x", rectStartX + 10)
+                              .attr("y", rectStartY + 120);
+      let SAT = mouseover.append("text")
+                              .attr("class", "mouseover-text")
+                              .attr("alignment-baseline","hanging")
+                              .attr("x", rectStartX + 10)
+                              .attr("y", rectStartY + 140);
+
+      let ACT = mouseover.append("text")
+                              .attr("class", "mouseover-text")
+                              .attr("alignment-baseline","hanging")
+                              .attr("x", rectStartX + 10)
+                              .attr("y", rectStartY + 160);
+
+      function updateMouseover(d) {
+        let schoolName = `School: ${d["School"]}`
+        let enrolled = `Enrolled Students: ${d["Enroll"]}`
+        let inStateCost = `In-State Cost: ${d["In-State Cost"]}`
+        let outStateCost = `Out-State Cost: ${d["Out-State Cost"]}`
+        let typeschool = `Type of school: ${d["Type"]}`
+        let accepted = `Acceptance Rate: ${d["Acceptance Rate"]}`
+        let satTotal = `SAT Total 25th-75th%: ${d["SAT Total 25th-75th%"]}`
+        let actTotal = `ACT Total 25th-75th%: ${d["ACT Total 25th-75th%"]}`
+        school.text(schoolName)
+        enroll.text(enrolled)
+        instate.text(inStateCost)
+        outstate.text(outStateCost)
+        type.text(typeschool)
+        acceptance.text(accepted)
+        SAT.text(satTotal)
+        ACT.text(actTotal)
+      };
+    }
+    createGraph();
+  </script>
+</body>
+
+</html>
